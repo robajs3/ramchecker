@@ -11,12 +11,12 @@ int wczytajInt(const string& komunikat, int min, int max) {
     while (true) {
         cout << komunikat;
         if (cin >> x && x >= min && x <= max) {
-            cin.ignore(10000, '\n');   // zjedz Enter po liczbie
+            cin.ignore(10000, '\n');
             return x;
         }
         cout << "Bledna wartosc! Dozwolony zakres: " << min << "-" << max << "\n";
-        cin.clear();                    // wyczysc flage bledu
-        cin.ignore(10000, '\n');        // wyrzuc smieci z bufora
+        cin.clear();
+        cin.ignore(10000, '\n');
     }
 }
 
@@ -35,20 +35,21 @@ double wczytajDodatni(const string& komunikat) {
     }
 }
 
-void dodaj(string nazwy[], int porty[], double ramy[], int& liczba) {
-    if (liczba >= MAX) {                       // walidacja przepelnienia
+// Tablice i licznik przekazane WYLACZNIE przez wskazniki
+void dodaj(string* nazwy, int* porty, double* ramy, int* liczba) {
+    if (*liczba >= MAX) {
         cout << "Baza pelna (" << MAX << " wpisow)!\n";
         return;
     }
     cout << "Nazwa uslugi: ";
-    getline(cin, nazwy[liczba]);               // getline - nazwa moze miec spacje
-    porty[liczba] = wczytajInt("Port (1-65535): ", 1, 65535);
-    ramy[liczba] = wczytajDodatni("RAM w MB (>0): ");
-    liczba++;                                  // licznik rosnie dopiero po komplecie danych
+    getline(cin, *(nazwy + *liczba));
+    *(porty + *liczba) = wczytajInt("Port (1-65535): ", 1, 65535);
+    *(ramy + *liczba) = wczytajDodatni("RAM w MB (>0): ");
+    (*liczba)++;   // nawiasy sa konieczne! *liczba++ przesunieloby wskaznik, a nie wartosc
     cout << "Dodano.\n";
 }
 
-void wypisz(const string nazwy[], const int porty[], const double ramy[], int liczba) {
+void wypisz(const string* nazwy, const int* porty, const double* ramy, int liczba) {
     if (liczba == 0) {
         cout << "Baza jest pusta.\n";
         return;
@@ -57,25 +58,46 @@ void wypisz(const string nazwy[], const int porty[], const double ramy[], int li
          << setw(8) << "Port" << "RAM [MB]\n";
     cout << string(50, '-') << "\n";
     for (int i = 0; i < liczba; i++) {
-        cout << left << setw(4) << i + 1 << setw(25) << nazwy[i]
-             << setw(8) << porty[i] << fixed << setprecision(1) << ramy[i] << "\n";
+        cout << left << setw(4) << i + 1 << setw(25) << *(nazwy + i)
+             << setw(8) << *(porty + i) << fixed << setprecision(1)
+             << *(ramy + i) << "\n";
     }
 }
 
-double sumaRam(const double ramy[], int liczba) {
+// --- ARYTMETYKA WSKAZNIKOWA: *(ramy + i) zamiast ramy[i] ---
+
+double sumaRam(const double* ramy, int liczba) {
     double suma = 0;
-    for (int i = 0; i < liczba; i++) suma += ramy[i];
+    for (int i = 0; i < liczba; i++)
+        suma += *(ramy + i);
     return suma;
 }
 
-int ileNaPortachPowyzej(const int porty[], int liczba, int prog) {
+double sredniRam(const double* ramy, int liczba) {
+    if (liczba == 0) return 0;
+    return sumaRam(ramy, liczba) / liczba;
+}
+
+// Zwraca indeks uslugi z najwiekszym RAM-em (lub -1 dla pustej bazy)
+int indeksNajwiekszegoRamu(const double* ramy, int liczba) {
+    if (liczba == 0) return -1;
+    int idxMax = 0;
+    for (int i = 1; i < liczba; i++) {
+        if (*(ramy + i) > *(ramy + idxMax))
+            idxMax = i;
+    }
+    return idxMax;
+}
+
+int ileNaPortachPowyzej(const int* porty, int liczba, int prog) {
     int licznik = 0;
     for (int i = 0; i < liczba; i++)
-        if (porty[i] > prog) licznik++;
+        if (*(porty + i) > prog) licznik++;
     return licznik;
 }
 
 int main() {
+    // Wszystko lokalnie w main - zero zmiennych globalnych
     string nazwy[MAX];
     int porty[MAX];
     double ramy[MAX];
@@ -84,12 +106,37 @@ int main() {
     int opcja;
     do {
         cout << "\n1. Dodaj  2. Wypisz  3. Statystyki  0. Wyjscie\n";
-        opcja = wczytajInt("Wybor: ", 0, 3);
-        if (opcja == 1) dodaj(nazwy, porty, ramy, liczba);
-        else if (opcja == 2) wypisz(nazwy, porty, ramy, liczba);
-        else if (opcja == 3) {
-            cout << "Suma RAM: " << sumaRam(ramy, liczba) << " MB\n";
-            cout << "Uslug na portach > 1024: " << ileNaPortachPowyzej(porty, liczba, 1024) << "\n";
+        // szeroki zakres, zeby "nieistniejaca opcja" (np. 7) dotarla do default
+        opcja = wczytajInt("Wybor: ", -1000000, 1000000);
+
+        switch (opcja) {
+            case 1:
+                dodaj(nazwy, porty, ramy, &liczba);   // &liczba - adres licznika z main
+                break;
+            case 2:
+                wypisz(nazwy, porty, ramy, liczba);
+                break;
+            case 3: {
+                if (liczba == 0) {
+                    cout << "Baza jest pusta.\n";
+                    break;
+                }
+                int idx = indeksNajwiekszegoRamu(ramy, liczba);
+                cout << fixed << setprecision(1);
+                cout << "Suma RAM:    " << sumaRam(ramy, liczba) << " MB\n";
+                cout << "Srednia RAM: " << sredniRam(ramy, liczba) << " MB\n";
+                cout << "Najwiecej RAM: " << *(nazwy + idx) << " ("
+                     << *(ramy + idx) << " MB)\n";
+                cout << "Uslug na portach > 1024: "
+                     << ileNaPortachPowyzej(porty, liczba, 1024) << "\n";
+                break;
+            }
+            case 0:
+                cout << "Koniec programu.\n";
+                break;
+            default:
+                cout << "Nie ma takiej opcji! Wybierz 0-3.\n";
+                break;
         }
     } while (opcja != 0);
 
